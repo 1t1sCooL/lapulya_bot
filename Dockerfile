@@ -6,7 +6,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --no-deps maigret==0.4.4 && \
+    pip install --no-cache-dir socid-extractor xmind jinja2 tqdm pycountry
 
 COPY . .
 

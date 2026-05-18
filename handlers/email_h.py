@@ -14,6 +14,7 @@ from modules.stopforumspam import sfs_check
 from modules.hashcrack import crack_hashes_batch, detect_hash_type
 from modules.emailrep import emailrep_check
 from modules.ipqualityscore import ipqs_email
+from modules.holehe_lookup import holehe_check
 from utils.formatter import kv, section, list_items, error_msg
 import config
 
@@ -52,7 +53,7 @@ async def cmd_email(message: Message):
     msg = await message.answer(f"🔍 Проверяю <code>{email}</code>...", parse_mode="HTML")
     log.debug("cmd_email: %r", email)
 
-    hibp, mx, lc_pub, hr, pn, xon, sfs, erep, ipqs = await asyncio.gather(
+    hibp, mx, lc_pub, hr, pn, xon, sfs, erep, ipqs, holehe = await asyncio.gather(
         hibp_check(email),
         email_domain_mx(email),
         leakcheck_public(email),
@@ -62,6 +63,7 @@ async def cmd_email(message: Message):
         sfs_check(email, "email"),
         emailrep_check(email, config.EMAILREP_API_KEY),
         ipqs_email(email, config.IPQS_API_KEY) if config.IPQS_API_KEY else asyncio.sleep(0, result={}),
+        holehe_check(email),
     )
     sc = {"found": 0, "results": []}   # scylla.sh offline
     cas = {"found": 0, "results": []}  # cassandra.sh offline
@@ -92,6 +94,39 @@ async def cmd_email(message: Message):
             kv("Доставляемость", ipqs.get("deliverability", "")),
         ]
     text += section("Информация", [b for b in basic if b])
+
+    # Holehe — на каких сервисах зарегистрирован email
+    if isinstance(holehe, dict) and "error" not in holehe and holehe.get("found", 0) > 0:
+        svcs = holehe.get("services", [])
+        domains = holehe.get("domains", {})
+        extras = holehe.get("extras", {})
+        checked = holehe.get("checked", 0)
+
+        # Иконки для популярных сервисов
+        icons = {
+            "instagram": "📸", "twitter": "🐦", "snapchat": "👻",
+            "discord": "🎮", "spotify": "🎵", "github": "💻",
+            "google": "🔍", "amazon": "📦", "ebay": "🛒",
+            "patreon": "💰", "pinterest": "📌", "tumblr": "✏️",
+            "adobe": "🎨", "nike": "👟", "strava": "🚴",
+            "soundcloud": "🎧", "lastfm": "🎼", "flickr": "📷",
+            "mail_ru": "📧", "odnoklassniki": "🤝", "rambler": "📧",
+            "deliveroo": "🍕", "blablacar": "🚗", "venmo": "💸",
+        }
+
+        h_lines = [f"Зарегистрирован на <b>{len(svcs)}</b> из {checked} проверенных сервисов:\n"]
+        for name in svcs:
+            icon = icons.get(name, "🔹")
+            domain = domains.get(name, "")
+            extra_info = ""
+            if name in extras:
+                ex = extras[name]
+                if ex.get("recovery_email"):
+                    extra_info = f" → резерв: <code>{ex['recovery_email']}</code>"
+                elif ex.get("phone"):
+                    extra_info = f" → тел: <code>{ex['phone']}</code>"
+            h_lines.append(f"  {icon} <b>{domain or name}</b>{extra_info}\n")
+        text += section(f"🌐 Holehe (аккаунты на сервисах)", h_lines)
 
     # Scylla.sh — реальные записи
     if isinstance(sc, dict) and "error" not in sc and sc.get("found", 0) > 0:
