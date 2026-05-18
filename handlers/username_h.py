@@ -75,8 +75,8 @@ async def cmd_username(message: Message):
     maigret_scanned = maigret_result.get("scanned", 0)
 
     # Убираем дубли (сайты уже найденные в своей базе)
-    local_sites = {r["site"].lower() for r in found_local}
-    maigret_unique = [r for r in maigret_found if r["site"].lower() not in local_sites]
+    local_sites_set = {r["site"].lower() for r in found_local}
+    maigret_unique = [r for r in maigret_found if r["site"].lower() not in local_sites_set]
 
     total_found = len(found_local) + len(maigret_unique)
 
@@ -93,14 +93,23 @@ async def cmd_username(message: Message):
         last = sfs_result.get("lastseen", "")[:10]
         lines.append(f"🚫 <b>StopForumSpam:</b> найден в базе спамеров! ({freq} раз, последний: {last})\n")
 
-    # Своя база — по категориям
+    # Своя база — по категориям, NSFW отдельно
     if found_local:
-        cats = _categorize(found_local)
-        lines.append("\n<b>── Собственная база ──</b>")
-        for cat, items in sorted(cats.items()):
-            lines.append(f"\n<b>{cat}</b>")
-            for r in items:
-                lines.append(f"  🟢 <a href='{r['url']}'>{r['site']}</a>")
+        reliable = [r for r in found_local if not r.get("is_nsfw")]
+        nsfw = [r for r in found_local if r.get("is_nsfw")]
+
+        if reliable:
+            cats = _categorize(reliable)
+            lines.append("\n<b>── Собственная база ──</b>")
+            for cat, items in sorted(cats.items()):
+                lines.append(f"\n<b>{cat}</b>")
+                for r in items:
+                    lines.append(f"  🟢 <a href='{r['url']}'>{r['site']}</a>")
+
+        if nsfw:
+            lines.append(f"\n<b>⚠️ NSFW-сайты (низкое доверие):</b>")
+            for r in nsfw:
+                lines.append(f"  🟡 {r['site']}")
 
     # Maigret — по категориям
     if maigret_unique:
