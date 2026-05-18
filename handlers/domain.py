@@ -7,6 +7,8 @@ from modules.greynoise import greynoise_ip
 from modules.abuseipdb import abuseipdb_check
 from modules.hunter import hunter_domain_search
 from modules.ipqualityscore import ipqs_ip
+from modules.tor_check import is_tor_exit
+from modules.stopforumspam import sfs_check
 from utils.formatter import kv, section, list_items, error_msg
 import config
 
@@ -83,12 +85,14 @@ async def cmd_ip(message: Message):
     ip = args[1].strip()
     msg = await message.answer(f"🔍 Анализирую IP <code>{ip}</code>...", parse_mode="HTML")
 
-    geo, idb, gn, abuse, ipqs = await asyncio.gather(
+    geo, idb, gn, abuse, ipqs, tor, sfs = await asyncio.gather(
         get_ip_geolocation(ip),
         internetdb_lookup(ip),
         greynoise_ip(ip, config.GREYNOISE_API_KEY) if config.GREYNOISE_API_KEY else asyncio.sleep(0, result={}),
         abuseipdb_check(ip, config.ABUSEIPDB_API_KEY) if config.ABUSEIPDB_API_KEY else asyncio.sleep(0, result={}),
         ipqs_ip(ip, config.IPQS_API_KEY) if config.IPQS_API_KEY else asyncio.sleep(0, result={}),
+        is_tor_exit(ip),
+        sfs_check(ip, "ip"),
     )
 
     if "error" in geo:
@@ -97,6 +101,8 @@ async def cmd_ip(message: Message):
 
     text = f"🖥 <b>OSINT: IP {ip}</b>\n"
 
+    tor_flag = " 🧅 <b>TOR</b>" if isinstance(tor, dict) and tor.get("is_tor") else ""
+    sfs_flag = " 🚫 <b>СПАМЕР</b>" if isinstance(sfs, dict) and sfs.get("found") else ""
     geo_lines = [
         kv("Город", geo.get("city")),
         kv("Регион", geo.get("region")),
@@ -106,6 +112,8 @@ async def cmd_ip(message: Message):
         kv("Часовой пояс", geo.get("timezone")),
         kv("Координаты", f"{geo.get('latitude')}, {geo.get('longitude')}"),
     ]
+    if tor_flag or sfs_flag:
+        geo_lines.append(f"<b>Флаги:</b>{tor_flag}{sfs_flag}")
     text += section("Геолокация", geo_lines)
 
     if "error" not in idb:

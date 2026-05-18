@@ -11,6 +11,8 @@ from modules.proxynova import proxynova_search
 from modules.hudsonrock import hudsonrock_email, hudsonrock_username, hudsonrock_domain
 from modules.xposedornot import xon_check_email, pwned_password
 from modules.scylla import scylla_search
+from modules.cassandra import cassandra_search
+from modules.stopforumspam import sfs_check
 from modules.hashcrack import crack_hashes_batch, detect_hash_type
 import config
 
@@ -155,6 +157,15 @@ def _build_tasks(query_type: str, query: str) -> dict:
     if query_type in ("email", "username", "name", "ip"):
         tasks["scylla"] = scylla_search(query)
 
+    # Cassandra.sh — ещё один движок утечек, бесплатно
+    if query_type in ("email", "username", "name", "ip"):
+        tasks["cassandra"] = cassandra_search(query)
+
+    # StopForumSpam — база спамеров/мошенников, бесплатно
+    if query_type in ("email", "ip", "username"):
+        sfs_type = query_type if query_type in ("email", "ip", "username") else "email"
+        tasks["sfs"] = sfs_check(query, sfs_type)
+
     return tasks
 
 
@@ -193,6 +204,28 @@ def _format_results(query: str, query_type: str, results: dict, ix_previews: dic
             lines.append("\n<b>Scylla.sh:</b> ✅ не найдено")
     elif isinstance(sc, dict):
         lines.append(f"\n<b>Scylla.sh:</b> ⚠️ {sc['error']}")
+
+    # ── Cassandra.sh ─────────────────────────────────────────────────
+    cas = results.get("cassandra")
+    if isinstance(cas, dict) and "error" not in cas and cas.get("found", 0) > 0:
+        any_found = True
+        lines.append(f"\n<b>🔴 Cassandra.sh</b> — найдено записей: <b>{cas['found']}</b>")
+        for rec in cas.get("results", [])[:10]:
+            row = _fmt_scylla_record(rec, cracked)
+            if row:
+                lines.append(row)
+
+    # ── StopForumSpam ─────────────────────────────────────────────────
+    sfs = results.get("sfs")
+    if isinstance(sfs, dict) and "error" not in sfs and sfs.get("found"):
+        any_found = True
+        conf = sfs.get("confidence", 0)
+        freq = sfs.get("frequency", 0)
+        last = sfs.get("lastseen", "")[:10]
+        lines.append(
+            f"\n<b>🚫 StopForumSpam</b> — <b>найден в базе спамеров!</b>\n"
+            f"  Встречался <b>{freq}</b> раз | Уверенность: {conf}% | Последний раз: {last}"
+        )
 
     # ── LeakCheck ────────────────────────────────────────────────────
     lc = results.get("leakcheck")

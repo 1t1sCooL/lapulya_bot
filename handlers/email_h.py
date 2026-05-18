@@ -9,6 +9,8 @@ from modules.hudsonrock import hudsonrock_email
 from modules.proxynova import proxynova_search
 from modules.xposedornot import xon_check_email
 from modules.scylla import scylla_search
+from modules.cassandra import cassandra_search
+from modules.stopforumspam import sfs_check
 from modules.hashcrack import crack_hashes_batch, detect_hash_type
 from modules.emailrep import emailrep_check
 from modules.ipqualityscore import ipqs_email
@@ -34,7 +36,7 @@ async def cmd_email(message: Message):
     msg = await message.answer(f"🔍 Проверяю <code>{email}</code>...", parse_mode="HTML")
     log.debug("cmd_email: %r", email)
 
-    hibp, mx, lc_pub, hr, pn, xon, sc, erep, ipqs = await asyncio.gather(
+    hibp, mx, lc_pub, hr, pn, xon, sc, cas, sfs, erep, ipqs = await asyncio.gather(
         hibp_check(email),
         email_domain_mx(email),
         leakcheck_public(email),
@@ -42,16 +44,21 @@ async def cmd_email(message: Message):
         proxynova_search(email),
         xon_check_email(email),
         scylla_search(email),
+        cassandra_search(email),
+        sfs_check(email, "email"),
         emailrep_check(email, config.EMAILREP_API_KEY),
         ipqs_email(email, config.IPQS_API_KEY) if config.IPQS_API_KEY else asyncio.sleep(0, result={}),
     )
 
-    # Авто-взлом хэшей из Scylla
-    sc_hashes = [
-        r.get("hash", "").lower() for r in (sc.get("results", []) if isinstance(sc, dict) else [])
-        if r.get("hash") and detect_hash_type(r.get("hash", ""))
-    ]
-    cracked = await crack_hashes_batch(sc_hashes) if sc_hashes else {}
+    # Авто-взлом хэшей из Scylla и Cassandra
+    all_hashes = []
+    for src in (sc, cas):
+        if isinstance(src, dict):
+            for rec in src.get("results", []):
+                h = rec.get("hash", "")
+                if h and detect_hash_type(h):
+                    all_hashes.append(h.lower())
+    cracked = await crack_hashes_batch(all_hashes) if all_hashes else {}
 
     text = f"📧 <b>OSINT: {email}</b>\n"
 
@@ -102,6 +109,40 @@ async def cmd_email(message: Message):
             if row_parts:
                 sc_lines.append("  🔸 " + " | ".join(row_parts) + "\n")
         text += section("🔴 Scylla.sh (реальные данные)", sc_lines)
+
+    # Cassandra.sh — реальные записи
+    if isinstance(cas, dict) and "error" not in cas and cas.get("found", 0) > 0:
+        cas_lines = [f"Найдено записей: <b>{cas['found']}</b>\n"]
+        for rec in cas.get("results", [])[:8]:
+            row_parts = []
+            if rec.get("username"):
+                row_parts.append(f"👤 <code>{rec['username']}</code>")
+            if rec.get("password"):
+                row_parts.append(f"🔑 <code>{rec['password']}</code>")
+            if rec.get("hash"):
+                h = rec["hash"].lower()
+                plain = cracked.get(h)
+                if plain:
+                    row_parts.append(f"🔓 <code>{plain}</code> <i>(взломан)</i>")
+                else:
+                    row_parts.append(f"🔒 <code>{h[:36]}</code>")
+            if rec.get("ip"):
+                row_parts.append(f"🖥 <code>{rec['ip']}</code>")
+            if rec.get("source"):
+                row_parts.append(f"<i>({rec['source']})</i>")
+            if row_parts:
+                cas_lines.append("  🔸 " + " | ".join(row_parts) + "\n")
+        text += section("🔴 Cassandra.sh (реальные данные)", cas_lines)
+
+    # StopForumSpam
+    if isinstance(sfs, dict) and "error" not in sfs and sfs.get("found"):
+        freq = sfs.get("frequency", 0)
+        conf = sfs.get("confidence", 0)
+        last = sfs.get("lastseen", "")[:10]
+        text += section("🚫 StopForumSpam", [
+            f"<b>Email найден в базе спамеров!</b>\n"
+            f"Встречался <b>{freq}</b> раз | Уверенность: {conf}% | Последний раз: {last}\n"
+        ])
 
     # XposedOrNot — 400+ утечек + риск + категории данных
     if "error" not in xon and xon.get("found", 0) > 0:
