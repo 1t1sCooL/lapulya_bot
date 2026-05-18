@@ -5,6 +5,19 @@ from typing import AsyncIterator
 from modules.sites_data import SITES
 from config import REQUEST_TIMEOUT
 
+# Объединяем с базой Sherlock при первом вызове
+_ALL_SITES: list[dict] | None = None
+
+def _get_sites() -> list[dict]:
+    global _ALL_SITES
+    if _ALL_SITES is None:
+        try:
+            from modules.sherlock_sites import get_merged_sites
+            _ALL_SITES = get_merged_sites(SITES)
+        except Exception:
+            _ALL_SITES = SITES
+    return _ALL_SITES
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                   "Chrome/124.0.0.0 Safari/537.36",
@@ -16,7 +29,7 @@ HEADERS = {
 def filter_sites_by_regex(username: str) -> list[dict]:
     """Отфильтровываем сайты, чьи regex username не проходит."""
     valid = []
-    for site in SITES:
+    for site in _get_sites():
         pattern = site.get("regex")
         if pattern and not re.match(pattern, username):
             continue
@@ -129,4 +142,4 @@ async def username_search_stream(
 
 
 def site_count() -> int:
-    return len(SITES)
+    return len(_get_sites())
