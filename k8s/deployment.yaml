@@ -66,6 +66,11 @@ spec:
                 secretKeyRef:
                   name: lapulya-bot-secret
                   key: RAPIDAPI_KEY
+            - name: GETCONTACT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lapulya-bot-secret
+                  key: GETCONTACT_TOKEN
             - name: ALLOWED_USERS
               valueFrom:
                 secretKeyRef:
