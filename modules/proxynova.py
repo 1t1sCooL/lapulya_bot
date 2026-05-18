@@ -30,18 +30,27 @@ async def proxynova_search(query: str, limit: int = 20) -> dict:
 
             data = r.json()
             count = data.get("count", 0)
-            lines = data.get("lines", [])[:limit]
-            log.debug("proxynova_search: найдено %d записей", count)
+            all_lines = data.get("lines", [])
+
+            # Фильтруем точные совпадения — строка должна начинаться с query
+            q_lower = query.lower()
+            exact_lines = [l for l in all_lines if l.lower().startswith(q_lower + ":") or l.lower() == q_lower]
+
+            # Если нет точных — берём все (для username/имён)
+            lines = exact_lines if exact_lines else []
+            exact_count = len(exact_lines)
+
+            log.debug("proxynova_search: всего=%d точных=%d", count, exact_count)
 
             results = []
-            for line in lines:
+            for line in lines[:limit]:
                 if ":" in line:
                     parts = line.split(":", 1)
                     results.append({"login": parts[0], "password": parts[1]})
                 else:
                     results.append({"login": line, "password": ""})
 
-            return {"found": count, "results": results}
+            return {"found": exact_count, "total_fuzzy": count, "results": results}
 
     except Exception as e:
         log.error("proxynova_search: %s", e)
