@@ -10,6 +10,8 @@ from modules.email_lookup import hibp_check
 from modules.proxynova import proxynova_search
 from modules.hudsonrock import hudsonrock_email, hudsonrock_username, hudsonrock_domain
 from modules.xposedornot import xon_check_email, pwned_password
+from modules.scylla import scylla_search
+from modules.hashcrack import crack_hashes_batch, detect_hash_type
 import config
 
 router = Router()
@@ -24,7 +26,7 @@ HELP_TEXT = (
     "  <code>/breach name Иванов Иван</code>\n"
     "  <code>/breach ip 1.2.3.4</code>\n"
     "  <code>/breach password mypassword</code>\n\n"
-    "Источники: XposedOrNot · LeakCheck · Dehashed · IntelX · HIBP · HudsonRock · Proxynova"
+    "Источники: Scylla · XposedOrNot · LeakCheck · Dehashed · IntelX · HIBP · HudsonRock · Proxynova"
 )
 
 
@@ -79,7 +81,7 @@ async def cmd_breach(message: Message):
     results_raw = await asyncio.gather(*tasks.values(), return_exceptions=True)
     results = dict(zip(tasks.keys(), results_raw))
 
-    # Получаем превью IntelX файлов для топ-3 результатов
+    # Превью IntelX файлов для топ-3 результатов
     ix_previews = {}
     if config.INTELX_API_KEY:
         ix = results.get("intelx", {})
@@ -93,7 +95,13 @@ async def cmd_breach(message: Message):
                 previews_raw = await asyncio.gather(*preview_tasks.values())
                 ix_previews = dict(zip(preview_tasks.keys(), previews_raw))
 
-    text = _format_results(query, query_type, results, ix_previews)
+    # Собираем все хэши из всех источников и взламываем параллельно
+    all_hashes = _collect_hashes(results)
+    cracked = {}
+    if all_hashes:
+        cracked = await crack_hashes_batch(list(all_hashes))
+
+    text = _format_results(query, query_type, results, ix_previews, cracked)
     await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
 
@@ -143,12 +151,48 @@ def _build_tasks(query_type: str, query: str) -> dict:
     if query_type == "email":
         tasks["xon"] = xon_check_email(query)
 
+    # Scylla.sh — реальные записи (email/пароль/логин/IP), бесплатно
+    if query_type in ("email", "username", "name", "ip"):
+        tasks["scylla"] = scylla_search(query)
+
     return tasks
 
 
-def _format_results(query: str, query_type: str, results: dict, ix_previews: dict = None) -> str:
+def _collect_hashes(results: dict) -> set:
+    """Собирает все хэши из всех источников для авто-взлома."""
+    hashes = set()
+    for key in ("leakcheck", "dehashed", "scylla"):
+        src = results.get(key)
+        if not isinstance(src, dict):
+            continue
+        for rec in src.get("results", []):
+            h = rec.get("hash") or rec.get("password_hash", "")
+            if h and detect_hash_type(h):
+                hashes.add(h.strip().lower())
+    return hashes
+
+
+def _format_results(query: str, query_type: str, results: dict, ix_previews: dict = None, cracked: dict = None) -> str:
     lines = [f"🗄 <b>Пробив: <code>{query}</code></b> [{query_type}]\n"]
     any_found = False
+
+    cracked = cracked or {}
+
+    # ── Scylla.sh ────────────────────────────────────────────────────
+    sc = results.get("scylla")
+    if isinstance(sc, dict) and "error" not in sc:
+        count = sc.get("found", 0)
+        any_found = any_found or count > 0
+        if count > 0:
+            lines.append(f"\n<b>🔴 Scylla.sh</b> — найдено записей: <b>{count}</b>")
+            for rec in sc.get("results", [])[:12]:
+                row = _fmt_scylla_record(rec, cracked)
+                if row:
+                    lines.append(row)
+        else:
+            lines.append("\n<b>Scylla.sh:</b> ✅ не найдено")
+    elif isinstance(sc, dict):
+        lines.append(f"\n<b>Scylla.sh:</b> ⚠️ {sc['error']}")
 
     # ── LeakCheck ────────────────────────────────────────────────────
     lc = results.get("leakcheck")
@@ -157,7 +201,7 @@ def _format_results(query: str, query_type: str, results: dict, ix_previews: dic
         any_found = any_found or count > 0
         lines.append(f"\n<b>🔴 LeakCheck</b> — найдено записей: <b>{count}</b>")
         for rec in lc.get("results", [])[:10]:
-            row = _fmt_leak_record(rec)
+            row = _fmt_leak_record(rec, cracked)
             if row:
                 lines.append(row)
     elif isinstance(lc, dict):
@@ -170,7 +214,7 @@ def _format_results(query: str, query_type: str, results: dict, ix_previews: dic
         any_found = any_found or total > 0
         lines.append(f"\n<b>🔴 Dehashed</b> — всего записей: <b>{total:,}</b>")
         for rec in dh.get("results", [])[:10]:
-            row = _fmt_dehashed_record(rec)
+            row = _fmt_dehashed_record(rec, cracked)
             if row:
                 lines.append(row)
     elif isinstance(dh, dict):
@@ -305,7 +349,34 @@ def _format_results(query: str, query_type: str, results: dict, ix_previews: dic
     return text
 
 
-def _fmt_leak_record(rec: dict) -> str:
+def _fmt_scylla_record(rec: dict, cracked: dict) -> str:
+    parts = []
+    if rec.get("email"):
+        parts.append(f"📧 <code>{rec['email']}</code>")
+    if rec.get("username"):
+        parts.append(f"👤 <code>{rec['username']}</code>")
+    if rec.get("name"):
+        parts.append(f"🧑 {rec['name']}")
+    if rec.get("password"):
+        parts.append(f"🔑 <code>{rec['password']}</code>")
+    if rec.get("hash"):
+        h = rec["hash"].lower()
+        plain = cracked.get(h)
+        if plain:
+            parts.append(f"🔓 <code>{plain}</code> <i>(взломан)</i>")
+        else:
+            parts.append(f"🔒 <code>{h[:40]}</code>")
+    if rec.get("ip"):
+        parts.append(f"🖥 <code>{rec['ip']}</code>")
+    if rec.get("phone"):
+        parts.append(f"📱 <code>{rec['phone']}</code>")
+    if rec.get("source"):
+        parts.append(f"<i>({rec['source']})</i>")
+    return "  🔸 " + " | ".join(parts) if parts else ""
+
+
+def _fmt_leak_record(rec: dict, cracked: dict = None) -> str:
+    cracked = cracked or {}
     parts = []
     if rec.get("email"):
         parts.append(f"📧 <code>{rec['email']}</code>")
@@ -314,7 +385,12 @@ def _fmt_leak_record(rec: dict) -> str:
     if rec.get("password"):
         parts.append(f"🔑 <code>{rec['password']}</code>")
     elif rec.get("password_hash"):
-        parts.append(f"🔒 <code>{rec['password_hash'][:40]}</code>")
+        h = rec["password_hash"].lower()
+        plain = cracked.get(h)
+        if plain:
+            parts.append(f"🔓 <code>{plain}</code> <i>(взломан)</i>")
+        else:
+            parts.append(f"🔒 <code>{h[:40]}</code>")
     if rec.get("phone"):
         parts.append(f"📱 <code>{rec['phone']}</code>")
     if rec.get("source"):
@@ -322,7 +398,8 @@ def _fmt_leak_record(rec: dict) -> str:
     return "  🔸 " + " | ".join(parts) if parts else ""
 
 
-def _fmt_dehashed_record(rec: dict) -> str:
+def _fmt_dehashed_record(rec: dict, cracked: dict = None) -> str:
+    cracked = cracked or {}
     parts = []
     if rec.get("email"):
         parts.append(f"📧 <code>{rec['email']}</code>")
@@ -331,7 +408,12 @@ def _fmt_dehashed_record(rec: dict) -> str:
     if rec.get("password"):
         parts.append(f"🔑 <code>{rec['password']}</code>")
     elif rec.get("hashed_password"):
-        parts.append(f"🔒 <code>{rec['hashed_password'][:40]}</code>")
+        h = rec["hashed_password"].lower()
+        plain = cracked.get(h)
+        if plain:
+            parts.append(f"🔓 <code>{plain}</code> <i>(взломан)</i>")
+        else:
+            parts.append(f"🔒 <code>{h[:40]}</code>")
     if rec.get("name"):
         parts.append(f"🧑 <code>{rec['name']}</code>")
     if rec.get("phone"):

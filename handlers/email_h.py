@@ -8,6 +8,8 @@ from modules.leakcheck import leakcheck_public
 from modules.hudsonrock import hudsonrock_email
 from modules.proxynova import proxynova_search
 from modules.xposedornot import xon_check_email
+from modules.scylla import scylla_search
+from modules.hashcrack import crack_hashes_batch, detect_hash_type
 from utils.formatter import kv, section, list_items, error_msg
 import config
 
@@ -30,14 +32,22 @@ async def cmd_email(message: Message):
     msg = await message.answer(f"🔍 Проверяю <code>{email}</code>...", parse_mode="HTML")
     log.debug("cmd_email: %r", email)
 
-    hibp, mx, lc_pub, hr, pn, xon = await asyncio.gather(
+    hibp, mx, lc_pub, hr, pn, xon, sc = await asyncio.gather(
         hibp_check(email),
         email_domain_mx(email),
         leakcheck_public(email),
         hudsonrock_email(email),
         proxynova_search(email),
         xon_check_email(email),
+        scylla_search(email),
     )
+
+    # Авто-взлом хэшей из Scylla
+    sc_hashes = [
+        r.get("hash", "").lower() for r in (sc.get("results", []) if isinstance(sc, dict) else [])
+        if r.get("hash") and detect_hash_type(r.get("hash", ""))
+    ]
+    cracked = await crack_hashes_batch(sc_hashes) if sc_hashes else {}
 
     text = f"📧 <b>OSINT: {email}</b>\n"
 
@@ -47,6 +57,30 @@ async def cmd_email(message: Message):
         kv("MX-серверы", ", ".join(mx[:3]) if mx else "не найдены"),
     ]
     text += section("Информация", basic)
+
+    # Scylla.sh — реальные записи
+    if isinstance(sc, dict) and "error" not in sc and sc.get("found", 0) > 0:
+        sc_lines = [f"Найдено записей: <b>{sc['found']}</b>\n"]
+        for rec in sc.get("results", [])[:10]:
+            row_parts = []
+            if rec.get("username"):
+                row_parts.append(f"👤 <code>{rec['username']}</code>")
+            if rec.get("password"):
+                row_parts.append(f"🔑 <code>{rec['password']}</code>")
+            if rec.get("hash"):
+                h = rec["hash"].lower()
+                plain = cracked.get(h)
+                if plain:
+                    row_parts.append(f"🔓 <code>{plain}</code> <i>(взломан)</i>")
+                else:
+                    row_parts.append(f"🔒 <code>{h[:36]}</code>")
+            if rec.get("ip"):
+                row_parts.append(f"🖥 <code>{rec['ip']}</code>")
+            if rec.get("source"):
+                row_parts.append(f"<i>({rec['source']})</i>")
+            if row_parts:
+                sc_lines.append("  🔸 " + " | ".join(row_parts) + "\n")
+        text += section("🔴 Scylla.sh (реальные данные)", sc_lines)
 
     # XposedOrNot — 400+ утечек + риск + категории данных
     if "error" not in xon and xon.get("found", 0) > 0:

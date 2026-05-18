@@ -156,7 +156,7 @@ async def intelx_file_preview(storage_id: str, api_key: str, lines: int = 10) ->
             r = await client.get(
                 f"{INTELX_API}/file/preview",
                 headers=headers,
-                params={"f": 0, "l": lines, "id": storage_id},
+                params={"f": 0, "l": lines, "id": storage_id, "k": api_key},
             )
             log.debug("intelx_file_preview: HTTP %d body=%r", r.status_code, r.text[:100])
             if r.status_code == 402:
