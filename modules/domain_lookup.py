@@ -1,9 +1,36 @@
 import asyncio
+import logging
 import whois
 import dns.resolver
 import dns.reversename
 import httpx
 from config import REQUEST_TIMEOUT
+
+log = logging.getLogger(__name__)
+
+
+async def internetdb_lookup(ip: str) -> dict:
+    """Shodan InternetDB — открытые порты, CVE, CPE. Бесплатно, без ключа."""
+    log.debug("internetdb_lookup: %r", ip)
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            r = await client.get(f"https://internetdb.shodan.io/{ip}")
+            log.debug("internetdb_lookup: HTTP %d", r.status_code)
+            if r.status_code == 404:
+                return {"ports": [], "vulns": [], "cpes": [], "tags": [], "hostnames": []}
+            if r.status_code != 200:
+                return {"error": f"InternetDB HTTP {r.status_code}"}
+            data = r.json()
+            return {
+                "ports": data.get("ports", []),
+                "vulns": data.get("vulns", []),
+                "cpes": data.get("cpes", []),
+                "tags": data.get("tags", []),
+                "hostnames": data.get("hostnames", []),
+            }
+    except Exception as e:
+        log.error("internetdb_lookup: %s", e)
+        return {"error": str(e)}
 
 
 async def whois_lookup(domain: str) -> dict:
