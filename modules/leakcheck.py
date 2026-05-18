@@ -58,3 +58,36 @@ def _normalize_leakcheck(rec: dict) -> dict:
         "source": rec.get("sources", [{}])[0].get("name", "?") if rec.get("sources") else "?",
         "last_breach": rec.get("sources", [{}])[0].get("date", "?") if rec.get("sources") else "?",
     }
+
+
+async def leakcheck_public(email: str) -> dict:
+    """
+    Публичный эндпоинт LeakCheck — список источников утечек без паролей.
+    Не требует API-ключа. Только для email-адресов.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    log.debug("leakcheck_public: %r", email)
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            r = await client.get(
+                f"https://leakcheck.io/api/public",
+                params={"check": email},
+            )
+            log.debug("leakcheck_public: HTTP %d", r.status_code)
+            if r.status_code == 429:
+                return {"error": "LeakCheck public: rate limit"}
+            if r.status_code != 200:
+                return {"error": f"LeakCheck public: HTTP {r.status_code}"}
+            data = r.json()
+            if not data.get("success"):
+                return {"error": data.get("error", "unknown")}
+            sources = data.get("sources", [])
+            log.debug("leakcheck_public: найдено %d источников, записей=%d", len(sources), data.get("found", 0))
+            return {
+                "found": data.get("found", 0),
+                "sources": sources[:50],
+            }
+    except Exception as e:
+        log.error("leakcheck_public: %s", e)
+        return {"error": str(e)}

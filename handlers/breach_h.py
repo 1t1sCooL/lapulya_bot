@@ -8,6 +8,7 @@ from modules.dehashed import dehashed_search
 from modules.breachdirectory import breachdirectory_search
 from modules.email_lookup import hibp_check
 from modules.proxynova import proxynova_search
+from modules.hudsonrock import hudsonrock_email, hudsonrock_username, hudsonrock_domain
 import config
 
 router = Router()
@@ -91,6 +92,14 @@ def _build_tasks(query_type: str, query: str) -> dict:
     # Proxynova COMB — бесплатно, без ключа, для email/username/name
     if query_type in ("email", "username", "name"):
         tasks["proxynova"] = proxynova_search(query)
+
+    # Hudson Rock Cavalier — инфостилеры, бесплатно
+    if query_type == "email":
+        tasks["hudsonrock"] = hudsonrock_email(query)
+    elif query_type == "username":
+        tasks["hudsonrock"] = hudsonrock_username(query)
+    elif query_type == "domain":
+        tasks["hudsonrock"] = hudsonrock_domain(query)
 
     return tasks
 
@@ -204,8 +213,20 @@ def _format_results(query: str, query_type: str, results: dict) -> str:
     elif isinstance(pn, dict):
         lines.append(f"\n<b>Proxynova:</b> ⚠️ {pn['error']}")
 
-    if not any(k in results for k in ("leakcheck", "dehashed", "intelx", "breachdir", "hibp", "proxynova")):
-        lines.append("\n⚠️ Ни один API ключ не настроен. Заполни .env файл.")
+    # ── Hudson Rock ───────────────────────────────────────────────────
+    hr = results.get("hudsonrock")
+    if isinstance(hr, dict) and "error" not in hr and hr.get("found", 0) > 0:
+        any_found = True
+        lines.append(f"\n<b>🚨 Hudson Rock</b> — заражённых машин: <b>{hr['found']}</b>")
+        for s in hr.get("stealers", [])[:3]:
+            lines.append(
+                f"  🦠 {s['date']} | {s['computer'] or '?'} | {s['total_services']} сервисов"
+            )
+    elif isinstance(hr, dict) and "error" in hr:
+        lines.append(f"\n<b>HudsonRock:</b> ⚠️ {hr['error']}")
+
+    if not any(k in results for k in ("leakcheck", "dehashed", "intelx", "breachdir", "hibp", "proxynova", "hudsonrock")):
+        lines.append("\n⚠️ Все источники недоступны.")
 
     if not any_found:
         lines.append("\n\n✅ <i>По данному запросу утечек не обнаружено.</i>")
