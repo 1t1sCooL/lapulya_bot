@@ -111,6 +111,12 @@ spec:
                   name: lapulya-bot-secret
                   key: IPQS_API_KEY
                   optional: true
+            - name: NUMVERIFY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lapulya-bot-secret
+                  key: NUMVERIFY_API_KEY
+                  optional: true
             - name: ALLOWED_USERS
               valueFrom:
                 secretKeyRef:

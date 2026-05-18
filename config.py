@@ -26,6 +26,7 @@ ABUSEIPDB_API_KEY = os.getenv("ABUSEIPDB_API_KEY", "")   # free: 1500/мес —
 EMAILREP_API_KEY  = os.getenv("EMAILREP_API_KEY", "")    # необязателен, 100/день без ключа
 HUNTER_API_KEY    = os.getenv("HUNTER_API_KEY", "")      # free: 100/мес — https://hunter.io/users/sign_up
 IPQS_API_KEY      = os.getenv("IPQS_API_KEY", "")        # free: 500/мес — https://www.ipqualityscore.com/create-account
+NUMVERIFY_API_KEY = os.getenv("NUMVERIFY_API_KEY", "")   # free: 250/мес — https://numverify.com/signup/free
 
 _allowed = os.getenv("ALLOWED_USERS", "")
 ALLOWED_USERS: set[int] = {int(u) for u in _allowed.split(",") if u.strip().isdigit()}

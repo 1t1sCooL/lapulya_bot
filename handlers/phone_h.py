@@ -9,6 +9,9 @@ from modules.leakcheck import leakcheck_search
 from modules.dehashed import dehashed_search
 from modules.intelx import intelx_search
 from modules.getcontact import getcontact_search
+from modules.numverify import numverify_lookup
+from modules.stopforumspam import sfs_check
+from modules.hudsonrock import hudsonrock_email
 from utils.formatter import kv, section, error_msg
 import config
 
@@ -40,11 +43,13 @@ async def cmd_phone(message: Message):
     )
 
     # Запускаем все источники параллельно
-    gc, lc, dh, ix = await asyncio.gather(
+    gc, lc, dh, ix, nv, sfs = await asyncio.gather(
         getcontact_search(e164, config.GETCONTACT_TOKEN),
         leakcheck_search(e164, config.LEAKCHECK_API_KEY, "phone") if config.LEAKCHECK_API_KEY else _empty(),
         dehashed_search(e164, config.DEHASHED_EMAIL, config.DEHASHED_API_KEY, field="phone") if config.DEHASHED_API_KEY else _empty(),
         intelx_search(e164, config.INTELX_API_KEY) if config.INTELX_API_KEY else _empty(),
+        numverify_lookup(e164, config.NUMVERIFY_API_KEY) if config.NUMVERIFY_API_KEY else _empty(),
+        sfs_check(e164.lstrip("+"), "ip"),   # SFS принимает только цифры без +
     )
     log.debug("cmd_phone: источники получены gc=%s lc=%s dh=%s ix=%s",
               "ok" if "error" not in gc else "err",
@@ -55,14 +60,38 @@ async def cmd_phone(message: Message):
     valid_icon = "✅" if result["valid"] else "⚠️"
     text = f"📱 <b>OSINT: {e164}</b>\n"
 
-    # Базовая инфо
+    # Базовая инфо (phonenumbers + NumVerify)
+    carrier = result.get("carrier") or (nv.get("carrier") if isinstance(nv, dict) and "error" not in nv else "") or "Неизвестно"
+    country = result.get("region") or (nv.get("country_name") if isinstance(nv, dict) and "error" not in nv else "")
+    line_type = (nv.get("line_type") if isinstance(nv, dict) and "error" not in nv else "") or result.get("number_type", "")
+    location = nv.get("location") if isinstance(nv, dict) and "error" not in nv else ""
     basic = [
-        kv("Страна/Регион", result.get("region")),
-        kv("Оператор", result.get("carrier") or "Неизвестно"),
-        kv("Тип", result.get("number_type")),
+        kv("Страна/Регион", country),
+        kv("Город/Регион", location) if location else "",
+        kv("Оператор", carrier),
+        kv("Тип линии", line_type),
         kv("Валидный", f"{valid_icon} {'Да' if result['valid'] else 'Нет'}"),
     ]
-    text += section("Информация о номере", basic)
+    text += section("Информация о номере", [b for b in basic if b])
+
+    # StopForumSpam
+    if isinstance(sfs, dict) and sfs.get("found"):
+        text += section("🚫 StopForumSpam", [
+            f"<b>Номер найден в базе спамеров!</b> Встречался {sfs.get('frequency', 0)} раз\n"
+        ])
+
+    # OSINT-ссылки (как в PhoneInfoga)
+    clean_no_plus = e164.lstrip("+")
+    encoded = e164.replace("+", "%2B")
+    osint_lines = [
+        f'🔍 <a href="https://www.google.com/search?q=%22{encoded}%22">Google</a> · '
+        f'<a href="https://www.google.com/search?q=%22{clean_no_plus}%22">Google (без +)</a> · '
+        f'<a href="https://yandex.ru/search/?text={clean_no_plus}">Яндекс</a>\n',
+        f'📱 <a href="https://wa.me/{clean_no_plus}">WhatsApp</a> · '
+        f'<a href="https://t.me/{e164}">Telegram</a> · '
+        f'<a href="https://vk.com/search?c[section]=people&c[phone]={clean_no_plus}">ВКонтакте</a>\n',
+    ]
+    text += section("🔗 OSINT-ссылки", osint_lines)
 
     # GetContact — имя из контактов
     if "error" not in gc and gc.get("name"):
