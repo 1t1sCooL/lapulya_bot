@@ -55,7 +55,7 @@ async def intelx_search(query: str, api_key: str, max_results: int = 20) -> dict
                 return {"error": f"IntelX result failed: HTTP {result_r.status_code}"}
 
             result_data = result_r.json()
-            records = result_data.get("records", [])
+            records = result_data.get("records") or []
 
             return {
                 "found": len(records),
@@ -106,7 +106,7 @@ async def intelx_phonebook(query: str, api_key: str, max_results: int = 100) -> 
                 params={"id": search_id, "limit": max_results, "offset": 0},
             )
             result_data = result_r.json()
-            selectors = result_data.get("selectors", [])
+            selectors = result_data.get("selectors") or []
 
             return {
                 "found": len(selectors),
