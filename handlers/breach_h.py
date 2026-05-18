@@ -7,6 +7,7 @@ from modules.intelx import intelx_search, intelx_phonebook
 from modules.dehashed import dehashed_search
 from modules.breachdirectory import breachdirectory_search
 from modules.email_lookup import hibp_check
+from modules.proxynova import proxynova_search
 import config
 
 router = Router()
@@ -86,6 +87,10 @@ def _build_tasks(query_type: str, query: str) -> dict:
 
     if config.HIBP_API_KEY and query_type == "email":
         tasks["hibp"] = hibp_check(query)
+
+    # Proxynova COMB — бесплатно, без ключа, для email/username/name
+    if query_type in ("email", "username", "name"):
+        tasks["proxynova"] = proxynova_search(query)
 
     return tasks
 
@@ -180,7 +185,26 @@ def _format_results(query: str, query_type: str, results: dict) -> str:
     elif isinstance(hibp, dict):
         lines.append(f"\n<b>HIBP:</b> ⚠️ {hibp['error']}")
 
-    if not any(k in results for k in ("leakcheck", "dehashed", "intelx", "breachdir", "hibp")):
+    # ── Proxynova COMB ────────────────────────────────────────────────
+    pn = results.get("proxynova")
+    if isinstance(pn, dict) and "error" not in pn:
+        count = pn.get("found", 0)
+        if count > 0:
+            any_found = True
+            lines.append(f"\n<b>🔴 Proxynova COMB</b> — найдено записей: <b>{count:,}</b>")
+            for rec in pn.get("results", [])[:8]:
+                login = rec.get("login", "")
+                pwd = rec.get("password", "")
+                if pwd:
+                    lines.append(f"  🔸 <code>{login}</code> : <code>{pwd}</code>")
+                else:
+                    lines.append(f"  🔸 <code>{login}</code>")
+        else:
+            lines.append("\n<b>Proxynova COMB:</b> ✅ не найдено")
+    elif isinstance(pn, dict):
+        lines.append(f"\n<b>Proxynova:</b> ⚠️ {pn['error']}")
+
+    if not any(k in results for k in ("leakcheck", "dehashed", "intelx", "breachdir", "hibp", "proxynova")):
         lines.append("\n⚠️ Ни один API ключ не настроен. Заполни .env файл.")
 
     if not any_found:
