@@ -57,17 +57,22 @@ async def _check_one(
         found = False
 
         if error_type == "status_code":
-            # Не найден если статус совпадает с error_value (обычно 404)
             found = r.status_code != error_value and r.status_code < 400
 
         elif error_type == "message":
-            # Не найден если текст ошибки присутствует в ответе
             found = r.status_code < 400 and str(error_value) not in r.text
+            # Доп. верификация: username должен реально присутствовать на странице
+            if found:
+                text_lower = r.text.lower()
+                uname_lower = username.lower()
+                found = uname_lower in text_lower
 
         elif error_type == "response_url":
-            # Не найден если финальный URL совпадает с error_value
             final_url = str(r.url)
             found = r.status_code < 400 and str(error_value) not in final_url
+            # Для response_url тоже проверяем наличие username на странице
+            if found:
+                found = username.lower() in r.text.lower()
 
         if found:
             return {
