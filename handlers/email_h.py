@@ -49,10 +49,20 @@ async def cmd_email(message: Message):
     # LeakCheck public (без ключа — список источников)
     if "error" not in lc_pub and lc_pub.get("found", 0) > 0:
         sources = lc_pub.get("sources", [])
-        src_lines = [f"Найдено в <b>{lc_pub['found']:,}</b> записях из {len(sources)} источников:\n"]
+        fields = lc_pub.get("fields", [])
+        src_lines = [f"Найдено в <b>{lc_pub['found']:,}</b> записях из {len(sources)} источников\n"]
+        if fields:
+            src_lines.append(f"Утекло: <i>{', '.join(fields)}</i>\n")
         for s in sources[:15]:
             date = f" ({s['date']})" if s.get("date") else ""
             src_lines.append(f"  🔸 {s['name']}{date}\n")
+        # Ссылки для ручной проверки
+        encoded = email.replace("@", "%40")
+        src_lines.append(
+            f'\n🔗 <a href="https://leakcheck.io/check?q={encoded}">LeakCheck</a> · '
+            f'<a href="https://dehashed.com/search?query={encoded}">DeHashed</a> · '
+            f'<a href="https://haveibeenpwned.com/account/{encoded}">HIBP</a>\n'
+        )
         text += section("LeakCheck (источники)", src_lines)
 
     # Proxynova COMB

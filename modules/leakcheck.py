@@ -84,9 +84,20 @@ async def leakcheck_public(email: str) -> dict:
                 return {"error": data.get("error", "unknown")}
             sources = data.get("sources", [])
             log.debug("leakcheck_public: найдено %d источников, записей=%d", len(sources), data.get("found", 0))
+            # Человекочитаемые названия полей
+            field_map = {
+                "password": "🔑 пароль", "email": "📧 email", "username": "👤 логин",
+                "name": "🧑 имя", "first_name": "имя", "last_name": "фамилия",
+                "phone": "📱 телефон", "address": "📍 адрес", "ip": "🖥 IP",
+                "dob": "📅 дата рождения", "gender": "пол", "country": "страна",
+                "city": "город", "hash": "🔒 хэш пароля",
+            }
+            raw_fields = data.get("fields", [])
+            readable_fields = [field_map.get(f, f) for f in raw_fields if f not in ("id", "origin")]
             return {
                 "found": data.get("found", 0),
                 "sources": sources[:50],
+                "fields": readable_fields[:12],
             }
     except Exception as e:
         log.error("leakcheck_public: %s", e)
