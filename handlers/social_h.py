@@ -1,11 +1,16 @@
+import logging
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from modules.vk_lookup import vk_user_lookup, vk_group_lookup
 from modules.telegram_lookup import tg_user_lookup
+from modules.ok_lookup import ok_user_lookup
+from modules.instagram_lookup import instagram_lookup
+from modules.twitter_lookup import twitter_lookup
 from utils.formatter import kv, section, error_msg
 
 router = Router()
+log = logging.getLogger(__name__)
 
 
 @router.message(Command("vk"))
@@ -105,3 +110,130 @@ async def cmd_tg(message: Message):
         text += f'\n<a href="{data["url"]}">Открыть профиль</a>'
 
     await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=False)
+
+
+@router.message(Command("ok"))
+async def cmd_ok(message: Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(
+            "Использование:\n"
+            "  <code>/ok odnoklassniki</code> — по username\n"
+            "  <code>/ok 123456789</code> — по числовому ID\n\n"
+            "Источник: OK.ru (публичные профили)",
+            parse_mode="HTML",
+        )
+        return
+
+    query = args[1].strip()
+    log.debug("cmd_ok: запрос %r от user_id=%s", query, message.from_user.id if message.from_user else "?")
+    msg = await message.answer(f"🔍 Ищу OK.ru: <code>{query}</code>...", parse_mode="HTML")
+
+    data = await ok_user_lookup(query)
+    if "error" in data:
+        await msg.edit_text(error_msg(data["error"]), parse_mode="HTML")
+        return
+
+    lines = [
+        kv("Имя", data.get("name")),
+        kv("Подписчиков", data.get("followers")),
+        kv("Город", data.get("location")),
+        kv("Профиль", f'<a href="{data.get("url", "")}">{data.get("url", "")}</a>'),
+    ]
+    if data.get("bio"):
+        lines.append(f"\n<b>О себе:</b> <i>{data['bio'][:200]}</i>\n")
+
+    text = f"🟠 <b>OK.ru: {data.get('name', query)}</b>\n"
+    text += section("Профиль", lines)
+
+    await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+@router.message(Command("inst"))
+async def cmd_inst(message: Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(
+            "Использование: <code>/inst instagram</code>\n\n"
+            "Источник: Instagram публичные профили (без авторизации)",
+            parse_mode="HTML",
+        )
+        return
+
+    username = args[1].strip().lstrip("@")
+    log.debug("cmd_inst: запрос %r от user_id=%s", username, message.from_user.id if message.from_user else "?")
+    msg = await message.answer(f"🔍 Ищу Instagram: <code>@{username}</code>...", parse_mode="HTML")
+
+    data = await instagram_lookup(username)
+    if "error" in data and not data.get("full_name"):
+        await msg.edit_text(error_msg(data["error"]), parse_mode="HTML")
+        return
+
+    verified_str = "✅ Да" if data.get("verified") else "Нет"
+    private_str = "🔒 Да" if data.get("private") else "🔓 Нет"
+    lines = [
+        kv("Username", f"@{data.get('username', username)}"),
+        kv("Имя", data.get("full_name")),
+        kv("Подписчики", data.get("followers")),
+        kv("Подписки", data.get("following")),
+        kv("Публикации", data.get("posts")),
+        kv("Верифицирован", verified_str),
+        kv("Приватный", private_str),
+        kv("Сайт", data.get("external_url")),
+    ]
+    if data.get("bio"):
+        lines.append(f"\n<b>Bio:</b> <i>{data['bio'][:200]}</i>\n")
+
+    text = f"📸 <b>Instagram: @{data.get('username', username)}</b>\n"
+    text += section("Профиль", lines)
+    if data.get("url"):
+        text += f'\n<a href="{data["url"]}">Открыть профиль</a>'
+
+    await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+@router.message(Command("tw"))
+async def cmd_tw(message: Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer(
+            "Использование: <code>/tw elonmusk</code>\n\n"
+            "Источник: Nitter (зеркала Twitter/X без ключа)",
+            parse_mode="HTML",
+        )
+        return
+
+    username = args[1].strip().lstrip("@")
+    log.debug("cmd_tw: запрос %r от user_id=%s", username, message.from_user.id if message.from_user else "?")
+    msg = await message.answer(f"🔍 Ищу Twitter/X: <code>@{username}</code>...", parse_mode="HTML")
+
+    data = await twitter_lookup(username)
+    if "error" in data and not data.get("name"):
+        await msg.edit_text(
+            error_msg(data["error"]) + f'\n\n<a href="https://x.com/{username}">Открыть X.com</a>',
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+
+    verified_str = "✅ Да" if data.get("verified") else "Нет"
+    lines = [
+        kv("Username", f"@{data.get('username', username)}"),
+        kv("Имя", data.get("name")),
+        kv("Твиты", data.get("tweets")),
+        kv("Подписчики", data.get("followers")),
+        kv("Подписки", data.get("following")),
+        kv("Дата регистрации", data.get("joined")),
+        kv("Верифицирован", verified_str),
+    ]
+    if data.get("bio"):
+        lines.append(f"\n<b>Bio:</b> <i>{data['bio'][:200]}</i>\n")
+    if data.get("source"):
+        lines.append(f"\n<i>Источник: {data['source']}</i>\n")
+
+    text = f"🐦 <b>Twitter/X: @{data.get('username', username)}</b>\n"
+    text += section("Профиль", lines)
+    if data.get("url"):
+        text += f'\n<a href="{data["url"]}">Открыть профиль</a>'
+
+    await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)

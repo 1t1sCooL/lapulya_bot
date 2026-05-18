@@ -12,6 +12,7 @@ from handlers import (
     username_router, social_router, image_router,
     breach_router, fio_router,
     company_router, car_router, doc_router,
+    address_router, osint_router,
 )
 
 logging.basicConfig(
@@ -45,6 +46,8 @@ def build_dispatcher() -> Dispatcher:
         company_router,
         car_router,
         doc_router,
+        address_router,
+        osint_router,
     )
     return dp
 
@@ -66,6 +69,11 @@ async def set_commands(bot: Bot):
         BotCommand(command="company", description="ЮЛ/ИП по ИНН или ОГРН (ЕГРЮЛ)"),
         BotCommand(command="car", description="Пробив госномера (ГИБДД)"),
         BotCommand(command="doc", description="Проверка паспорта / ИНН"),
+        BotCommand(command="ok", description="OK.ru профиль"),
+        BotCommand(command="inst", description="Instagram профиль"),
+        BotCommand(command="tw", description="Twitter/X профиль (nitter)"),
+        BotCommand(command="address", description="Поиск адреса / кадастровый номер"),
+        BotCommand(command="osint", description="Сводный OSINT-отчёт (авто-определение)"),
     ]
     await bot.set_my_commands(commands)
 
@@ -82,20 +90,26 @@ async def main():
     async def cmd_start(message: Message):
         await message.answer(
             "🕵️ <b>OSINT Bot</b>\n\n"
-            "Команды:\n"
+            "<b>Соцсети:</b>\n"
+            "/vk <code>durov</code> — VK профиль\n"
+            "/tg <code>@username</code> — Telegram профиль\n"
+            "/ok <code>username</code> — OK.ru профиль\n"
+            "/inst <code>instagram</code> — Instagram профиль\n"
+            "/tw <code>elonmusk</code> — Twitter/X профиль\n"
+            "/user <code>nickname</code> — поиск username по 35+ сайтам\n\n"
+            "<b>Данные:</b>\n"
             "/domain <code>example.com</code> — WHOIS, DNS, субдомены\n"
             "/ip <code>8.8.8.8</code> — геолокация IP\n"
             "/email <code>user@example.com</code> — проверка email + утечки\n"
             "/phone <code>+79001234567</code> — информация о номере\n"
-            "/user <code>nickname</code> — поиск username по 35+ сайтам\n"
-            "/vk <code>durov</code> — VK профиль\n"
-            "/tg <code>@username</code> — Telegram профиль\n"
             "/breach <code>email user@x.com</code> — пробив по базам утечек\n"
             "/fio <code>Иванов Иван [Отч]</code> — поиск по ФИО\n"
             "/company <code>7707083893</code> — ЮЛ/ИП по ИНН/ОГРН (ЕГРЮЛ)\n"
             "/car <code>А123БВ77</code> — пробив госномера (ГИБДД)\n"
             "/doc <code>паспорт 4510 123456</code> — проверка паспорта\n"
-            "/doc <code>инн Иванов Иван Иванович 01.01.1990</code> — ИНН по ФИО\n"
+            "/address <code>Москва Тверская 1</code> — поиск адреса / кадастровый №\n\n"
+            "<b>Агрегатор:</b>\n"
+            "/osint <code>любой запрос</code> — сводный отчёт (авто-определение типа)\n\n"
             "📷 <b>Отправьте фото</b> — реверс-поиск через Yandex\n\n"
             "<i>⚠️ Используй только для авторизованного тестирования.</i>",
         )

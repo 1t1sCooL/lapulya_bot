@@ -9,10 +9,13 @@ from .fio_h import router as fio_router
 from .company_h import router as company_router
 from .car_h import router as car_router
 from .doc_h import router as doc_router
+from .address_h import router as address_router
+from .osint_h import router as osint_router
 
 __all__ = [
     "domain_router", "email_router", "phone_router",
     "username_router", "social_router", "image_router",
     "breach_router", "fio_router",
     "company_router", "car_router", "doc_router",
+    "address_router", "osint_router",
 ]
