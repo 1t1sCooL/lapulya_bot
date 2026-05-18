@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, BotCommand
 from aiogram.enums import ParseMode
@@ -67,7 +68,7 @@ async def main():
         log.error("BOT_TOKEN не задан! Скопируй .env.example в .env и заполни.")
         return
 
-    bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = build_dispatcher()
 
     @dp.message(CommandStart())
