@@ -12,7 +12,7 @@ from handlers import (
     username_router, social_router, image_router,
     breach_router, fio_router,
     company_router, car_router, doc_router,
-    address_router, osint_router,
+    address_router, osint_router, tools_router,
 )
 
 logging.basicConfig(
@@ -35,6 +35,7 @@ def build_dispatcher() -> Dispatcher:
             return await handler(event, data)
 
     dp.include_routers(
+        tools_router,      # отдельные сервисы — первым (короткие команды)
         domain_router,
         email_router,
         phone_router,
@@ -54,26 +55,43 @@ def build_dispatcher() -> Dispatcher:
 
 async def set_commands(bot: Bot):
     commands = [
-        BotCommand(command="start", description="Главное меню"),
-        BotCommand(command="help", description="Список команд"),
-        BotCommand(command="domain", description="WHOIS + DNS + субдомены"),
-        BotCommand(command="ip", description="Геолокация IP"),
-        BotCommand(command="email", description="Проверка email + утечки"),
-        BotCommand(command="phone", description="Информация о номере"),
-        BotCommand(command="user", description="Поиск username по сайтам"),
-        BotCommand(command="vk", description="VK профиль / группа"),
-        BotCommand(command="tg", description="Telegram профиль"),
-        BotCommand(command="photo", description="Реверс-поиск по фото"),
-        BotCommand(command="breach", description="Пробив по базам утечек"),
-        BotCommand(command="fio", description="Поиск по ФИО"),
-        BotCommand(command="company", description="ЮЛ/ИП по ИНН или ОГРН (ЕГРЮЛ)"),
-        BotCommand(command="car", description="Пробив госномера (ГИБДД)"),
-        BotCommand(command="doc", description="Проверка паспорта / ИНН"),
-        BotCommand(command="ok", description="OK.ru профиль"),
-        BotCommand(command="inst", description="Instagram профиль"),
-        BotCommand(command="tw", description="Twitter/X профиль (nitter)"),
-        BotCommand(command="address", description="Поиск адреса / кадастровый номер"),
-        BotCommand(command="osint", description="Сводный OSINT-отчёт (авто-определение)"),
+        BotCommand(command="start",      description="Главное меню и список команд"),
+        # ── Агрегаторы ──
+        BotCommand(command="osint",      description="Сводный OSINT (авто-определение типа)"),
+        BotCommand(command="email",      description="Полный OSINT по email"),
+        BotCommand(command="phone",      description="Полный OSINT по номеру телефона"),
+        BotCommand(command="user",       description="Поиск username: Sherlock+Maigret+WMN"),
+        BotCommand(command="domain",     description="WHOIS + DNS + субдомены + Hunter"),
+        BotCommand(command="ip",         description="IP: гео + Shodan + GreyNoise + AbuseIPDB"),
+        BotCommand(command="breach",     description="Пробив по базам утечек (все источники)"),
+        # ── Соцсети ──
+        BotCommand(command="vk",         description="VK профиль / группа"),
+        BotCommand(command="tg",         description="Telegram профиль / канал"),
+        BotCommand(command="ok",         description="OK.ru профиль"),
+        BotCommand(command="inst",       description="Instagram профиль"),
+        BotCommand(command="tw",         description="Twitter/X профиль"),
+        # ── Данные ──
+        BotCommand(command="fio",        description="Поиск по ФИО"),
+        BotCommand(command="company",    description="ЮЛ/ИП по ИНН/ОГРН (ЕГРЮЛ)"),
+        BotCommand(command="car",        description="Госномер автомобиля"),
+        BotCommand(command="doc",        description="Паспорт / ИНН физлица"),
+        BotCommand(command="address",    description="Адрес / кадастровый номер"),
+        # ── Отдельные сервисы ──
+        BotCommand(command="wa",         description="WhatsApp: регистрация номера"),
+        BotCommand(command="htmlweb",    description="htmlweb.ru: оператор и регион номера"),
+        BotCommand(command="wayback",    description="Wayback Machine: история сайта"),
+        BotCommand(command="wmn",        description="WhatsMyName: 1500+ сайтов для username"),
+        BotCommand(command="maigret",    description="Maigret: 3000+ сайтов для username"),
+        BotCommand(command="holehe",     description="Holehe: 144 сервиса по email"),
+        BotCommand(command="hibp",       description="HIBP: Have I Been Pwned"),
+        BotCommand(command="xon",        description="XposedOrNot: 400+ баз утечек"),
+        BotCommand(command="proxynova",  description="Proxynova COMB: 3.2 млрд пар"),
+        BotCommand(command="leakcheck",  description="LeakCheck public: источники утечек"),
+        BotCommand(command="intelx",     description="IntelX: пасты и дампы"),
+        BotCommand(command="hudsonrock", description="HudsonRock: инфостилеры"),
+        BotCommand(command="sfs",        description="StopForumSpam: база спамеров"),
+        BotCommand(command="torcheck",   description="Tor check: exit node проверка"),
+        BotCommand(command="crack",      description="Взлом хэша MD5/SHA1/SHA256"),
     ]
     await bot.set_my_commands(commands)
 
@@ -90,28 +108,58 @@ async def main():
     async def cmd_start(message: Message):
         await message.answer(
             "🕵️ <b>OSINT Bot</b>\n\n"
-            "<b>Соцсети:</b>\n"
-            "/vk <code>durov</code> — VK профиль\n"
-            "/tg <code>@username</code> — Telegram профиль\n"
+
+            "━━ <b>АГРЕГАТОРЫ</b> ━━\n"
+            "/osint <code>запрос</code> — авто-определение типа, всё сразу\n"
+            "/email <code>user@mail.ru</code> — Holehe+HIBP+XON+LeakCheck+HudsonRock+Proxynova\n"
+            "/phone <code>+79001234567</code> — NumVerify+htmlweb+GetContact+утечки\n"
+            "/user <code>nickname</code> — Sherlock+Maigret+WhatsMyName (3500+ сайтов)\n"
+            "/domain <code>example.com</code> — WHOIS+DNS+субдомены+Hunter email\n"
+            "/ip <code>8.8.8.8</code> — гео+Shodan+GreyNoise+AbuseIPDB+Tor\n"
+            "/breach <code>email user@x.com</code> — все базы утечек\n\n"
+
+            "━━ <b>СОЦСЕТИ</b> ━━\n"
+            "/vk <code>durov</code> — профиль ВКонтакте\n"
+            "/tg <code>@username</code> — профиль / канал Telegram\n"
             "/ok <code>username</code> — OK.ru профиль\n"
-            "/inst <code>instagram</code> — Instagram профиль\n"
-            "/tw <code>elonmusk</code> — Twitter/X профиль\n"
-            "/user <code>nickname</code> — поиск username по 35+ сайтам\n\n"
-            "<b>Данные:</b>\n"
-            "/domain <code>example.com</code> — WHOIS, DNS, субдомены\n"
-            "/ip <code>8.8.8.8</code> — геолокация IP\n"
-            "/email <code>user@example.com</code> — проверка email + утечки\n"
-            "/phone <code>+79001234567</code> — информация о номере\n"
-            "/breach <code>email user@x.com</code> — пробив по базам утечек\n"
-            "/fio <code>Иванов Иван [Отч]</code> — поиск по ФИО\n"
-            "/company <code>7707083893</code> — ЮЛ/ИП по ИНН/ОГРН (ЕГРЮЛ)\n"
-            "/car <code>А123БВ77</code> — пробив госномера (ГИБДД)\n"
-            "/doc <code>паспорт 4510 123456</code> — проверка паспорта\n"
-            "/address <code>Москва Тверская 1</code> — поиск адреса / кадастровый №\n\n"
-            "<b>Агрегатор:</b>\n"
-            "/osint <code>любой запрос</code> — сводный отчёт (авто-определение типа)\n\n"
-            "📷 <b>Отправьте фото</b> — реверс-поиск через Yandex\n\n"
-            "<i>⚠️ Используй только для авторизованного тестирования.</i>",
+            "/inst <code>username</code> — Instagram профиль\n"
+            "/tw <code>elonmusk</code> — Twitter/X профиль\n\n"
+
+            "━━ <b>ДАННЫЕ</b> ━━\n"
+            "/fio <code>Иванов Иван Иванович</code> — поиск по ФИО\n"
+            "/company <code>7707083893</code> — ЮЛ/ИП по ИНН/ОГРН\n"
+            "/car <code>А123БВ77</code> — госномер авто\n"
+            "/doc <code>паспорт 4510 123456</code> — паспорт / ИНН\n"
+            "/address <code>Москва Тверская 1</code> — адрес / кадастр\n\n"
+
+            "━━ <b>ОТДЕЛЬНЫЕ СЕРВИСЫ</b> ━━\n"
+            "<b>Телефон:</b>\n"
+            "  /wa <code>+79001234567</code> — WhatsApp регистрация\n"
+            "  /htmlweb <code>+7900...</code> — оператор и регион (htmlweb.ru)\n\n"
+
+            "<b>Email:</b>\n"
+            "  /holehe <code>u@mail.ru</code> — 144 сервиса где зарегистрирован\n"
+            "  /hibp <code>u@mail.ru</code> — Have I Been Pwned\n"
+            "  /xon <code>u@mail.ru</code> — XposedOrNot 400+ баз\n"
+            "  /leakcheck <code>u@mail.ru</code> — LeakCheck источники\n\n"
+
+            "<b>Username:</b>\n"
+            "  /wmn <code>nick</code> — WhatsMyName 1500+ сайтов\n"
+            "  /maigret <code>nick</code> — Maigret 3000+ сайтов\n\n"
+
+            "<b>Утечки:</b>\n"
+            "  /proxynova <code>email</code> — Proxynova COMB 3.2B\n"
+            "  /intelx <code>query</code> — IntelX пасты и дампы\n"
+            "  /hudsonrock <code>email/username/domain query</code> — инфостилеры\n"
+            "  /crack <code>хэш</code> — взлом MD5/SHA1/SHA256\n\n"
+
+            "<b>Домен / IP:</b>\n"
+            "  /wayback <code>example.com</code> — история в Wayback Machine\n"
+            "  /torcheck <code>1.2.3.4</code> — Tor exit node проверка\n"
+            "  /sfs <code>email/ip/username запрос</code> — StopForumSpam\n\n"
+
+            "📷 <b>Отправь фото</b> — реверс-поиск Yandex + Face++\n\n"
+            "<i>⚠️ Только для авторизованного тестирования.</i>",
         )
 
     @dp.message(Command("help"))
