@@ -9,6 +9,7 @@ from modules.breachdirectory import breachdirectory_search
 from modules.email_lookup import hibp_check
 from modules.proxynova import proxynova_search
 from modules.hudsonrock import hudsonrock_email, hudsonrock_username, hudsonrock_domain
+from modules.xposedornot import xon_check_email, pwned_password
 import config
 
 router = Router()
@@ -21,8 +22,9 @@ HELP_TEXT = (
     "  <code>/breach username johndoe</code>\n"
     "  <code>/breach domain example.com</code>\n"
     "  <code>/breach name Иванов Иван</code>\n"
-    "  <code>/breach ip 1.2.3.4</code>\n\n"
-    "Источники: LeakCheck · Dehashed · IntelX · BreachDirectory · HIBP"
+    "  <code>/breach ip 1.2.3.4</code>\n"
+    "  <code>/breach password mypassword</code>\n\n"
+    "Источники: XposedOrNot · LeakCheck · Dehashed · IntelX · HIBP · HudsonRock · Proxynova"
 )
 
 
@@ -36,7 +38,7 @@ async def cmd_breach(message: Message):
     query_type = parts[1].lower()
     query = parts[2].strip()
 
-    valid_types = {"email", "phone", "username", "domain", "name", "ip"}
+    valid_types = {"email", "phone", "username", "domain", "name", "ip", "password"}
     if query_type not in valid_types:
         await message.answer(
             f"Неизвестный тип: <code>{query_type}</code>\n"
@@ -49,6 +51,28 @@ async def cmd_breach(message: Message):
         f"🔍 Пробиваю <code>{query}</code> по базам утечек...",
         parse_mode="HTML",
     )
+
+    # Специальный обработчик для пароля
+    if query_type == "password":
+        count = await pwned_password(query)
+        if count < 0:
+            await msg.edit_text("⚠️ Не удалось проверить пароль", parse_mode="HTML")
+        elif count == 0:
+            await msg.edit_text(
+                f"🔑 <b>Пароль:</b> <code>{'*' * len(query)}</code>\n\n"
+                "✅ <b>Не найден</b> в базах утечек HIBP.\n"
+                "<i>Это не гарантирует безопасность — могут быть другие базы.</i>",
+                parse_mode="HTML"
+            )
+        else:
+            await msg.edit_text(
+                f"🔑 <b>Пароль:</b> <code>{'*' * len(query)}</code>\n\n"
+                f"🔴 <b>Найден {count:,} раз</b> в базах утечек!\n"
+                "<b>Немедленно смени этот пароль везде где используется.</b>\n\n"
+                "<i>⚠️ Пароль проверяется через k-anonymity — полный пароль никуда не отправляется.</i>",
+                parse_mode="HTML"
+            )
+        return
 
     # Запускаем все источники параллельно
     tasks = _build_tasks(query_type, query)
@@ -100,6 +124,10 @@ def _build_tasks(query_type: str, query: str) -> dict:
         tasks["hudsonrock"] = hudsonrock_username(query)
     elif query_type == "domain":
         tasks["hudsonrock"] = hudsonrock_domain(query)
+
+    # XposedOrNot — 400+ баз, бесплатно
+    if query_type == "email":
+        tasks["xon"] = xon_check_email(query)
 
     return tasks
 
@@ -212,6 +240,20 @@ def _format_results(query: str, query_type: str, results: dict) -> str:
             lines.append("\n<b>Proxynova COMB:</b> ✅ не найдено")
     elif isinstance(pn, dict):
         lines.append(f"\n<b>Proxynova:</b> ⚠️ {pn['error']}")
+
+    # ── XposedOrNot ──────────────────────────────────────────────────
+    xon = results.get("xon")
+    if isinstance(xon, dict) and "error" not in xon and xon.get("found", 0) > 0:
+        any_found = True
+        risk_emoji = {"Critical": "🔴", "High": "🟠", "Moderate": "🟡", "Low": "🟢"}.get(xon.get("risk_label", ""), "⚪")
+        lines.append(f"\n<b>{risk_emoji} XposedOrNot</b> — {xon['found']} утечек | риск: <b>{xon.get('risk_label','?')}</b> ({xon.get('risk_score',0)}/100)")
+        breaches = xon.get("breaches", [])[:15]
+        if breaches:
+            lines.append("  " + " · ".join(breaches))
+        if len(xon.get("breaches", [])) > 15:
+            lines.append(f"  <i>...и ещё {len(xon['breaches']) - 15}</i>")
+    elif isinstance(xon, dict) and "error" in xon:
+        lines.append(f"\n<b>XposedOrNot:</b> ⚠️ {xon['error']}")
 
     # ── Hudson Rock ───────────────────────────────────────────────────
     hr = results.get("hudsonrock")

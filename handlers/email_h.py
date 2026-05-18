@@ -7,6 +7,7 @@ from modules.email_lookup import validate_email, hibp_check, email_domain_mx
 from modules.leakcheck import leakcheck_public
 from modules.hudsonrock import hudsonrock_email
 from modules.proxynova import proxynova_search
+from modules.xposedornot import xon_check_email
 from utils.formatter import kv, section, list_items, error_msg
 import config
 
@@ -29,12 +30,13 @@ async def cmd_email(message: Message):
     msg = await message.answer(f"🔍 Проверяю <code>{email}</code>...", parse_mode="HTML")
     log.debug("cmd_email: %r", email)
 
-    hibp, mx, lc_pub, hr, pn = await asyncio.gather(
+    hibp, mx, lc_pub, hr, pn, xon = await asyncio.gather(
         hibp_check(email),
         email_domain_mx(email),
         leakcheck_public(email),
         hudsonrock_email(email),
         proxynova_search(email),
+        xon_check_email(email),
     )
 
     text = f"📧 <b>OSINT: {email}</b>\n"
@@ -45,6 +47,34 @@ async def cmd_email(message: Message):
         kv("MX-серверы", ", ".join(mx[:3]) if mx else "не найдены"),
     ]
     text += section("Информация", basic)
+
+    # XposedOrNot — 400+ утечек + риск + категории данных
+    if "error" not in xon and xon.get("found", 0) > 0:
+        risk_emoji = {"Critical": "🔴", "High": "🟠", "Moderate": "🟡", "Low": "🟢"}.get(xon["risk_label"], "⚪")
+        xon_lines = [
+            f"{risk_emoji} Риск: <b>{xon['risk_label']}</b> ({xon['risk_score']}/100) | "
+            f"Утечек: <b>{xon['found']}</b>\n"
+        ]
+        # Пароли
+        pwd = xon.get("passwords", {})
+        if pwd:
+            plain = pwd.get("PlainText", 0)
+            easy = pwd.get("EasyToCrack", 0)
+            strong = pwd.get("StrongHash", 0)
+            xon_lines.append(f"Пароли: открытых <b>{plain}</b> | слабых <b>{easy}</b> | хэшей <b>{strong}</b>\n")
+        # Категории данных
+        cats = xon.get("exposed_categories", [])
+        if cats:
+            cat_str = " · ".join(f"{c['name']} ({c['count']})" for c in cats[:6])
+            xon_lines.append(f"Данные: <i>{cat_str}</i>\n")
+        # Список утечек (первые 20)
+        breaches = xon.get("breaches", [])
+        if breaches:
+            shown = breaches[:20]
+            xon_lines.append("  " + " · ".join(shown) + "\n")
+            if len(breaches) > 20:
+                xon_lines.append(f"  <i>...и ещё {len(breaches) - 20}</i>\n")
+        text += section("XposedOrNot (400+ баз)", xon_lines)
 
     # LeakCheck public (без ключа — список источников)
     if "error" not in lc_pub and lc_pub.get("found", 0) > 0:
