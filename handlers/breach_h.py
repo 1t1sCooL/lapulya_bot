@@ -104,7 +104,10 @@ async def cmd_breach(message: Message):
         cracked = await crack_hashes_batch(list(all_hashes))
 
     text = _format_results(query, query_type, results, ix_previews, cracked)
-    await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
+    parts = _split_message(text)
+    await msg.edit_text(parts[0], parse_mode="HTML", disable_web_page_preview=True)
+    for part in parts[1:]:
+        await message.answer(part, parse_mode="HTML", disable_web_page_preview=True)
 
 
 def _build_tasks(query_type: str, query: str) -> dict:
@@ -153,13 +156,7 @@ def _build_tasks(query_type: str, query: str) -> dict:
     if query_type == "email":
         tasks["xon"] = xon_check_email(query)
 
-    # Scylla.sh — реальные записи (email/пароль/логин/IP), бесплатно
-    if query_type in ("email", "username", "name", "ip"):
-        tasks["scylla"] = scylla_search(query)
-
-    # Cassandra.sh — ещё один движок утечек, бесплатно
-    if query_type in ("email", "username", "name", "ip"):
-        tasks["cassandra"] = cassandra_search(query)
+    # Scylla.sh / Cassandra.sh — временно отключены (домены недоступны)
 
     # StopForumSpam — база спамеров/мошенников, бесплатно
     if query_type in ("email", "ip", "username"):
@@ -167,6 +164,23 @@ def _build_tasks(query_type: str, query: str) -> dict:
         tasks["sfs"] = sfs_check(query, sfs_type)
 
     return tasks
+
+
+def _split_message(text: str, limit: int = 3900) -> list[str]:
+    """Разбивает длинное сообщение на части по 3900 символов, не ломая теги."""
+    if len(text) <= limit:
+        return [text]
+    parts = []
+    while text:
+        if len(text) <= limit:
+            parts.append(text)
+            break
+        cut = text.rfind("\n", 0, limit)
+        if cut == -1:
+            cut = limit
+        parts.append(text[:cut])
+        text = text[cut:].lstrip("\n")
+    return parts
 
 
 def _collect_hashes(results: dict) -> set:
@@ -376,10 +390,7 @@ def _format_results(query: str, query_type: str, results: dict, ix_previews: dic
     else:
         lines.append("\n\n<i>⚠️ Данные получены из публично известных утечек.</i>")
 
-    text = "\n".join(lines)
-    if len(text) > 4000:
-        text = text[:3980] + "\n\n<i>... обрезано</i>"
-    return text
+    return "\n".join(lines)
 
 
 def _fmt_scylla_record(rec: dict, cracked: dict) -> str:

@@ -159,12 +159,10 @@ async def intelx_file_preview(storage_id: str, api_key: str, lines: int = 10) ->
                 params={"f": 0, "l": lines, "id": storage_id, "k": api_key},
             )
             log.debug("intelx_file_preview: HTTP %d body=%r", r.status_code, r.text[:100])
-            if r.status_code == 402:
-                return "⚠️ Превышен лимит free tier"
-            if r.status_code == 404:
-                return "⚠️ Файл недоступен"
+            if r.status_code in (400, 402, 403, 404):
+                return ""   # free tier не поддерживает preview для этого типа
             if r.status_code != 200:
-                return f"⚠️ HTTP {r.status_code}: {r.text[:80]}"
+                return ""
             text = r.text.strip()
             return text[:1500] if text else "(пустой файл)"
     except Exception as e:

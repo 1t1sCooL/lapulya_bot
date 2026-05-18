@@ -21,6 +21,22 @@ router = Router()
 log = logging.getLogger(__name__)
 
 
+def _split_msg(text: str, limit: int = 3900) -> list[str]:
+    if len(text) <= limit:
+        return [text]
+    parts = []
+    while text:
+        if len(text) <= limit:
+            parts.append(text)
+            break
+        cut = text.rfind("\n", 0, limit)
+        if cut == -1:
+            cut = limit
+        parts.append(text[:cut])
+        text = text[cut:].lstrip("\n")
+    return parts
+
+
 @router.message(Command("email"))
 async def cmd_email(message: Message):
     args = message.text.split(maxsplit=1)
@@ -36,29 +52,20 @@ async def cmd_email(message: Message):
     msg = await message.answer(f"🔍 Проверяю <code>{email}</code>...", parse_mode="HTML")
     log.debug("cmd_email: %r", email)
 
-    hibp, mx, lc_pub, hr, pn, xon, sc, cas, sfs, erep, ipqs = await asyncio.gather(
+    hibp, mx, lc_pub, hr, pn, xon, sfs, erep, ipqs = await asyncio.gather(
         hibp_check(email),
         email_domain_mx(email),
         leakcheck_public(email),
         hudsonrock_email(email),
         proxynova_search(email),
         xon_check_email(email),
-        scylla_search(email),
-        cassandra_search(email),
         sfs_check(email, "email"),
         emailrep_check(email, config.EMAILREP_API_KEY),
         ipqs_email(email, config.IPQS_API_KEY) if config.IPQS_API_KEY else asyncio.sleep(0, result={}),
     )
-
-    # Авто-взлом хэшей из Scylla и Cassandra
-    all_hashes = []
-    for src in (sc, cas):
-        if isinstance(src, dict):
-            for rec in src.get("results", []):
-                h = rec.get("hash", "")
-                if h and detect_hash_type(h):
-                    all_hashes.append(h.lower())
-    cracked = await crack_hashes_batch(all_hashes) if all_hashes else {}
+    sc = {"found": 0, "results": []}   # scylla.sh offline
+    cas = {"found": 0, "results": []}  # cassandra.sh offline
+    cracked = {}
 
     text = f"📧 <b>OSINT: {email}</b>\n"
 
@@ -222,7 +229,7 @@ async def cmd_email(message: Message):
         else:
             text += section("HIBP", ["✅ Не найдено в известных утечках\n"])
 
-    if len(text) > 4000:
-        text = text[:3980] + "\n<i>… обрезано</i>"
-
-    await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
+    parts = _split_msg(text)
+    await msg.edit_text(parts[0], parse_mode="HTML", disable_web_page_preview=True)
+    for part in parts[1:]:
+        await message.answer(part, parse_mode="HTML", disable_web_page_preview=True)
