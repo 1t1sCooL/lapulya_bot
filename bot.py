@@ -11,6 +11,7 @@ from handlers import (
     domain_router, email_router, phone_router,
     username_router, social_router, image_router,
     breach_router, fio_router,
+    company_router, car_router, doc_router,
 )
 
 logging.basicConfig(
@@ -41,6 +42,9 @@ def build_dispatcher() -> Dispatcher:
         image_router,
         breach_router,
         fio_router,
+        company_router,
+        car_router,
+        doc_router,
     )
     return dp
 
@@ -59,6 +63,9 @@ async def set_commands(bot: Bot):
         BotCommand(command="photo", description="Реверс-поиск по фото"),
         BotCommand(command="breach", description="Пробив по базам утечек"),
         BotCommand(command="fio", description="Поиск по ФИО"),
+        BotCommand(command="company", description="ЮЛ/ИП по ИНН или ОГРН (ЕГРЮЛ)"),
+        BotCommand(command="car", description="Пробив госномера (ГИБДД)"),
+        BotCommand(command="doc", description="Проверка паспорта / ИНН"),
     ]
     await bot.set_my_commands(commands)
 
@@ -85,6 +92,10 @@ async def main():
             "/tg <code>@username</code> — Telegram профиль\n"
             "/breach <code>email user@x.com</code> — пробив по базам утечек\n"
             "/fio <code>Иванов Иван [Отч]</code> — поиск по ФИО\n"
+            "/company <code>7707083893</code> — ЮЛ/ИП по ИНН/ОГРН (ЕГРЮЛ)\n"
+            "/car <code>А123БВ77</code> — пробив госномера (ГИБДД)\n"
+            "/doc <code>паспорт 4510 123456</code> — проверка паспорта\n"
+            "/doc <code>инн Иванов Иван Иванович 01.01.1990</code> — ИНН по ФИО\n"
             "📷 <b>Отправьте фото</b> — реверс-поиск через Yandex\n\n"
             "<i>⚠️ Используй только для авторизованного тестирования.</i>",
         )
