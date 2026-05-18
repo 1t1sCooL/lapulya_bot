@@ -10,6 +10,8 @@ from modules.proxynova import proxynova_search
 from modules.xposedornot import xon_check_email
 from modules.scylla import scylla_search
 from modules.hashcrack import crack_hashes_batch, detect_hash_type
+from modules.emailrep import emailrep_check
+from modules.ipqualityscore import ipqs_email
 from utils.formatter import kv, section, list_items, error_msg
 import config
 
@@ -32,7 +34,7 @@ async def cmd_email(message: Message):
     msg = await message.answer(f"🔍 Проверяю <code>{email}</code>...", parse_mode="HTML")
     log.debug("cmd_email: %r", email)
 
-    hibp, mx, lc_pub, hr, pn, xon, sc = await asyncio.gather(
+    hibp, mx, lc_pub, hr, pn, xon, sc, erep, ipqs = await asyncio.gather(
         hibp_check(email),
         email_domain_mx(email),
         leakcheck_public(email),
@@ -40,6 +42,8 @@ async def cmd_email(message: Message):
         proxynova_search(email),
         xon_check_email(email),
         scylla_search(email),
+        emailrep_check(email, config.EMAILREP_API_KEY),
+        ipqs_email(email, config.IPQS_API_KEY) if config.IPQS_API_KEY else asyncio.sleep(0, result={}),
     )
 
     # Авто-взлом хэшей из Scylla
@@ -52,11 +56,28 @@ async def cmd_email(message: Message):
     text = f"📧 <b>OSINT: {email}</b>\n"
 
     # Базовая инфо
+    rep_emoji = {"high": "🟢", "medium": "🟡", "low": "🟠", "none": "🔴"}.get(
+        erep.get("reputation", ""), "⚪"
+    ) if "error" not in erep else "⚪"
     basic = [
         kv("Домен", email.split("@")[-1]),
         kv("MX-серверы", ", ".join(mx[:3]) if mx else "не найдены"),
+        kv("Репутация", f"{rep_emoji} {erep.get('reputation', '?')}") if "error" not in erep else "",
+        kv("Одноразовый", "Да ⚠️" if erep.get("disposable") else "Нет") if "error" not in erep else "",
+        kv("Утечки (EmailRep)", "Да 🔴" if erep.get("credentials_leaked") else "Нет") if "error" not in erep else "",
+        kv("Соцсети", ", ".join(erep.get("profiles", [])[:5])) if erep.get("profiles") else "",
     ]
-    text += section("Информация", basic)
+    # IPQS email score
+    if isinstance(ipqs, dict) and "error" not in ipqs and ipqs:
+        fs = ipqs.get("fraud_score", 0)
+        fs_emoji = "🔴" if fs >= 75 else ("🟠" if fs >= 40 else "🟢")
+        basic += [
+            kv("Фрод-скор (IPQS)", f"{fs_emoji} {fs}/100"),
+            kv("Утечки (IPQS)", "Да 🔴" if ipqs.get("leaked") else "Нет"),
+            kv("Спам-ловушка", "Да ⚠️" if ipqs.get("spam_trap") else "Нет") if ipqs.get("spam_trap") else "",
+            kv("Доставляемость", ipqs.get("deliverability", "")),
+        ]
+    text += section("Информация", [b for b in basic if b])
 
     # Scylla.sh — реальные записи
     if isinstance(sc, dict) and "error" not in sc and sc.get("found", 0) > 0:

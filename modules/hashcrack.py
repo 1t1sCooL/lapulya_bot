@@ -33,11 +33,12 @@ async def crack_hash(hash_str: str) -> str | None:
     log.debug("crack_hash: %s (%s)", h[:10], htype)
 
     fns = []
+    if htype in ("md5", "sha1", "sha256"):
+        fns.append(_hashes_com(h, htype))
     if htype in ("md5", "sha1"):
         fns.append(_nitrxgen(h))
     if htype == "md5":
         fns.append(_md5_gromweb(h))
-        fns.append(_md5_lookup_md5(h))
 
     for coro in asyncio.as_completed(fns):
         try:
@@ -68,6 +69,26 @@ async def crack_hashes_batch(hashes: list[str]) -> dict[str, str]:
 
 
 # ── Источники ──────────────────────────────────────────────────────────────
+
+async def _hashes_com(h: str, htype: str) -> str | None:
+    """hashes.com — бесплатный поиск хэшей, большая база, нет ключа."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                "https://hashes.com/en/api/identifier",
+                data={"hashvalue": h},
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            if r.status_code == 200:
+                d = r.json()
+                if d.get("success") and d.get("plains"):
+                    plain = d["plains"][0]
+                    if plain and len(plain) < 200:
+                        return plain
+    except Exception:
+        pass
+    return None
+
 
 async def _nitrxgen(h: str) -> str | None:
     """nitrxgen.net — бесплатная MD5/SHA1 rainbow table."""
@@ -108,19 +129,3 @@ async def _md5_gromweb(h: str) -> str | None:
     return None
 
 
-async def _md5_lookup_md5(h: str) -> str | None:
-    """md5.lookup.md5 — простой MD5 lookup через API."""
-    try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            r = await client.get(
-                "https://md5.lookup.md5/",
-                params={"q": h},
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
-            if r.status_code == 200:
-                t = r.text.strip()
-                if t and t != h and len(t) < 200:
-                    return t
-    except Exception:
-        pass
-    return None
