@@ -19,6 +19,8 @@ spec:
         - name: lapulya-bot
           image: ghcr.io/1t1scool/lapulya_bot:IMAGE_TAG
           env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
             - name: BOT_TOKEN
               valueFrom:
                 secretKeyRef:
