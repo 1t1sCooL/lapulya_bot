@@ -71,8 +71,9 @@ async def _check_one(
 
         if found:
             return {
-                "site": site["name"],
-                "url": url,
+                "site":       site["name"],
+                "url":        url,
+                "confidence": "high" if error_type == "status_code" else "medium",
             }
 
     except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError):

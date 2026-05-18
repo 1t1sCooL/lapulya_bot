@@ -93,36 +93,45 @@ async def cmd_username(message: Message):
         last = sfs_result.get("lastseen", "")[:10]
         lines.append(f"🚫 <b>StopForumSpam:</b> найден в базе спамеров! ({freq} раз, последний: {last})\n")
 
-    # Своя база — по категориям, NSFW отдельно
+    # Своя база — высокое доверие отдельно от среднего
     if found_local:
-        reliable = [r for r in found_local if not r.get("is_nsfw")]
+        high = [r for r in found_local if r.get("confidence") == "high" and not r.get("is_nsfw")]
+        medium = [r for r in found_local if r.get("confidence") != "high" and not r.get("is_nsfw")]
         nsfw = [r for r in found_local if r.get("is_nsfw")]
 
-        if reliable:
-            cats = _categorize(reliable)
-            lines.append("\n<b>── Собственная база ──</b>")
+        if high:
+            lines.append(f"\n<b>✅ Высокое доверие — {len(high)} сайтов</b> <i>(404 при отсутствии)</i>")
+            cats = _categorize(high)
             for cat, items in sorted(cats.items()):
                 lines.append(f"\n<b>{cat}</b>")
                 for r in items:
                     lines.append(f"  🟢 <a href='{r['url']}'>{r['site']}</a>")
 
-        if nsfw:
-            lines.append(f"\n<b>⚠️ NSFW-сайты (низкое доверие):</b>")
-            for r in nsfw:
-                lines.append(f"  🟡 {r['site']}")
+        if medium:
+            lines.append(f"\n\n<b>🟡 Среднее доверие — {len(medium)} сайтов</b> <i>(требует ручной проверки)</i>")
+            cats_m = _categorize(medium)
+            for cat, items in sorted(cats_m.items()):
+                lines.append(f"\n<b>{cat}</b>")
+                for r in items:
+                    lines.append(f"  🟡 <a href='{r['url']}'>{r['site']}</a>")
 
-    # Maigret — по категориям
+        if nsfw:
+            lines.append(f"\n\n<b>⚠️ NSFW (низкое доверие) — {len(nsfw)}</b>")
+            for r in nsfw:
+                lines.append(f"  🔴 {r['site']}")
+
+    # Maigret — по категориям (у них нет confidence, считаем medium)
     if maigret_unique:
         cats_m = group_by_category(maigret_unique)
-        lines.append(f"\n<b>── Maigret ({maigret_scanned} сайтов) ──</b>")
+        lines.append(f"\n\n<b>── Maigret ({maigret_scanned} сайтов) ──</b>")
         for cat, items in cats_m.items():
             lines.append(f"\n<b>{cat or 'Другое'}</b>")
-            for r in items[:20]:   # не более 20 на категорию
+            for r in items[:20]:
                 url = r.get("url", "")
                 if url:
-                    lines.append(f"  🟢 <a href='{url}'>{r['site']}</a>")
+                    lines.append(f"  🟡 <a href='{url}'>{r['site']}</a>")
                 else:
-                    lines.append(f"  🟢 {r['site']}")
+                    lines.append(f"  🟡 {r['site']}")
 
     if "error" in maigret_result and maigret_result["error"] != "timeout":
         lines.append(f"\n<i>⚠️ Maigret: {maigret_result['error']}</i>")
