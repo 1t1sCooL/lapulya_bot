@@ -3,7 +3,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from modules.leakcheck import leakcheck_search
-from modules.intelx import intelx_search, intelx_phonebook
+from modules.intelx import intelx_search, intelx_phonebook, intelx_file_preview
 from modules.dehashed import dehashed_search
 from modules.breachdirectory import breachdirectory_search
 from modules.email_lookup import hibp_check
@@ -79,7 +79,21 @@ async def cmd_breach(message: Message):
     results_raw = await asyncio.gather(*tasks.values(), return_exceptions=True)
     results = dict(zip(tasks.keys(), results_raw))
 
-    text = _format_results(query, query_type, results)
+    # Получаем превью IntelX файлов для топ-3 результатов
+    ix_previews = {}
+    if config.INTELX_API_KEY:
+        ix = results.get("intelx", {})
+        if isinstance(ix, dict) and ix.get("results"):
+            preview_tasks = {}
+            for rec in ix["results"][:3]:
+                sid = rec.get("storageid")
+                if sid:
+                    preview_tasks[sid] = intelx_file_preview(sid, config.INTELX_API_KEY, lines=8)
+            if preview_tasks:
+                previews_raw = await asyncio.gather(*preview_tasks.values())
+                ix_previews = dict(zip(preview_tasks.keys(), previews_raw))
+
+    text = _format_results(query, query_type, results, ix_previews)
     await msg.edit_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
 
@@ -132,7 +146,7 @@ def _build_tasks(query_type: str, query: str) -> dict:
     return tasks
 
 
-def _format_results(query: str, query_type: str, results: dict) -> str:
+def _format_results(query: str, query_type: str, results: dict, ix_previews: dict = None) -> str:
     lines = [f"🗄 <b>Пробив: <code>{query}</code></b> [{query_type}]\n"]
     any_found = False
 
@@ -171,9 +185,19 @@ def _format_results(query: str, query_type: str, results: dict) -> str:
         for rec in ix.get("results", [])[:8]:
             if rec.get("name"):
                 lines.append(
-                    f"  📄 {rec['name'][:60]} "
+                    f"\n  📄 <b>{rec['name'][:60]}</b> "
                     f"<i>({rec.get('media', '')}, {rec.get('date', '')})</i>"
                 )
+                sid = rec.get("storageid", "")
+                if ix_previews and sid in ix_previews:
+                    preview = ix_previews[sid]
+                    if preview and not preview.startswith("⚠️"):
+                        # Показываем превью в блоке кода
+                        preview_lines = preview.split("\n")[:6]
+                        escaped = "\n".join(preview_lines)
+                        lines.append(f"<pre>{escaped[:600]}</pre>")
+                    else:
+                        lines.append(f"  <i>{preview}</i>")
     elif isinstance(ix, dict):
         lines.append(f"\n<b>IntelX:</b> ⚠️ {ix['error']}")
 

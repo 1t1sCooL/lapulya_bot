@@ -138,3 +138,33 @@ def _media_type(code: int) -> str:
         13: "Leaks", 14: "Forums", 19: "Dark Web",
     }
     return types.get(code, f"Media({code})")
+
+
+async def intelx_file_preview(storage_id: str, api_key: str, lines: int = 10) -> str:
+    """
+    Читает первые N строк файла из IntelX по storageid.
+    Возвращает текст или строку с ошибкой.
+    """
+    import logging
+    log = logging.getLogger(__name__)
+    if not api_key:
+        return "INTELX_API_KEY не задан"
+    log.debug("intelx_file_preview: %r lines=%d", storage_id[:8], lines)
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(
+                f"{INTELX_API}/file/preview",
+                params={"f": 0, "l": lines, "id": storage_id, "k": api_key},
+            )
+            log.debug("intelx_file_preview: HTTP %d", r.status_code)
+            if r.status_code == 402:
+                return "⚠️ Превышен лимит free tier"
+            if r.status_code == 404:
+                return "⚠️ Файл недоступен"
+            if r.status_code != 200:
+                return f"⚠️ HTTP {r.status_code}"
+            text = r.text.strip()
+            return text[:1500] if text else "(пустой файл)"
+    except Exception as e:
+        log.error("intelx_file_preview: %s", e)
+        return f"⚠️ {e}"
