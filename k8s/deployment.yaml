@@ -71,6 +71,16 @@ spec:
                 secretKeyRef:
                   name: lapulya-bot-secret
                   key: GETCONTACT_TOKEN
+            - name: FACEPP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lapulya-bot-secret
+                  key: FACEPP_API_KEY
+            - name: FACEPP_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: lapulya-bot-secret
+                  key: FACEPP_API_SECRET
             - name: ALLOWED_USERS
               valueFrom:
                 secretKeyRef:

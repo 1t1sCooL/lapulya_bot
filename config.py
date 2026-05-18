@@ -15,6 +15,8 @@ DEHASHED_EMAIL = os.getenv("DEHASHED_EMAIL", "")
 DEHASHED_API_KEY = os.getenv("DEHASHED_API_KEY", "")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")   # для BreachDirectory
 GETCONTACT_TOKEN = os.getenv("GETCONTACT_TOKEN", "")  # неофициальный API GetContact
+FACEPP_API_KEY = os.getenv("FACEPP_API_KEY", "")
+FACEPP_API_SECRET = os.getenv("FACEPP_API_SECRET", "")
 
 _allowed = os.getenv("ALLOWED_USERS", "")
 ALLOWED_USERS: set[int] = {int(u) for u in _allowed.split(",") if u.strip().isdigit()}
