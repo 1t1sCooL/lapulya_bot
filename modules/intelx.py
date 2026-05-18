@@ -7,7 +7,7 @@ import asyncio
 import httpx
 from config import REQUEST_TIMEOUT
 
-INTELX_API = "https://2.intelx.io"
+INTELX_API = "https://free.intelx.io"   # free tier URL; paid: https://2.intelx.io
 
 
 async def intelx_search(query: str, api_key: str, max_results: int = 20) -> dict:
