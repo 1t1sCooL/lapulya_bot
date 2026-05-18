@@ -150,19 +150,21 @@ async def intelx_file_preview(storage_id: str, api_key: str, lines: int = 10) ->
     if not api_key:
         return "INTELX_API_KEY не задан"
     log.debug("intelx_file_preview: %r lines=%d", storage_id[:8], lines)
+    headers = {"x-key": api_key}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.get(
                 f"{INTELX_API}/file/preview",
-                params={"f": 0, "l": lines, "id": storage_id, "k": api_key},
+                headers=headers,
+                params={"f": 0, "l": lines, "id": storage_id},
             )
-            log.debug("intelx_file_preview: HTTP %d", r.status_code)
+            log.debug("intelx_file_preview: HTTP %d body=%r", r.status_code, r.text[:100])
             if r.status_code == 402:
                 return "⚠️ Превышен лимит free tier"
             if r.status_code == 404:
                 return "⚠️ Файл недоступен"
             if r.status_code != 200:
-                return f"⚠️ HTTP {r.status_code}"
+                return f"⚠️ HTTP {r.status_code}: {r.text[:80]}"
             text = r.text.strip()
             return text[:1500] if text else "(пустой файл)"
     except Exception as e:
